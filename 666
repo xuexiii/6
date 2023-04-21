@@ -1,7 +1,7 @@
 # coding=utf-8
 import os
 from math import sqrt
-from torchvision import transforms
+from torchvision import transforms, models
 from PIL import Image
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
@@ -15,6 +15,9 @@ import torch
 import torchvision.models
 from tqdm import tqdm, trange
 import torch.nn as nn
+
+from resnet_with_phase import ResNet
+
 print('mmmmmmmmmmmmmmmmmmmmmm',torch.cuda.is_available())
 
 
@@ -143,10 +146,6 @@ val_dataloader = torch.utils.data.DataLoader(dataset=val_dataset, batch_size=4, 
 test_dataloader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=4, shuffle=False)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# for batch, (x1, y1) in enumerate(train_dataloader):
-#     xtrain, ytrain = x1.to(device), y1.to(device)
-# for batch, (x2, y2) in enumerate(val_dataloader):
-#     xval, yval = x2.to(device), y2.to(device)
 
 
 
@@ -159,21 +158,26 @@ learning_rate = 0.001
 
 def main():
 
-    # model = torchvision.models.resnet50(pretrained=True)
-    # model = model.cuda()
-    # model = model.to(device)
-    # model.fc = nn.Linear(2048,1)
 
-    model = torchvision.models.resnet50(pretrained=True)
+    class ResNetRegression(nn.Module):
+        def __init__(self, num_classes):
+            super(ResNetRegression, self).__init__()
+            self.resnet = models.resnet50(pretrained=True)
+            self.resnet.conv1 = nn.Conv2d(4, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            num_conv_features = self.resnet.fc.in_features
+            self.fc = nn.Linear(num_conv_features + 1, 1)  # 将输入维度改为 num_conv_features + 1
 
-    weight = model.conv1.weight
-    new_weight = torch.nn.Parameter(torch.cat((weight, weight[:, :1, :, :]), dim=1))
-    model.conv1 = nn.Conv2d(4, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-    model.conv1.weight = new_weight
+        def forward(self, x, labels2):
+            print(x.shape)
+            print(labels2.shape)
+            x = self.resnet(x)
+            x = torch.cat([x, labels2], dim=1)
+            print(x.shape)
 
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, 1)
-
+            x = self.fc(x).squeeze(1)
+            return x
+    # 实例化模型
+    model = ResNetRegression(num_classes=1)
     # Loss and optimizer
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -193,21 +197,18 @@ def main():
         n1 = 0
         model.train()
         for i, (images, labels, labels2) in enumerate(tqdm(train_dataloader)):
+            optimizer.zero_grad()
             images = images.to(device)
-
             labels = labels.to(torch.float32)
             labels2=labels2.to(device)
             labels = np.around(labels, decimals=2)
             labels = labels.to(device)
+            labels2 = torch.Tensor(labels2).unsqueeze(1)
+
             # Forward pass
             model = model.to(device)
-            outputs = model(images)
+            outputs = model(images,labels2)
             outputs = outputs.to(torch.float32)
-
-            labels2 = torch.Tensor(labels2).unsqueeze(1)
-            # print(labels2.shape)
-            # print(outputs.shape)
-            outputs = torch.cat((outputs, labels2.to(device)), dim=0)
 
             loss = criterion(outputs, labels)
             LOSS += loss.item()
@@ -215,15 +216,7 @@ def main():
             print(labels)
 
             #RMSE
-            # rmse_sum =  rmse_sum.to_bytes(device)
-            rmse_sum += torch.sqrt(((model(images.to(device)) - labels) ** 2).sum()).cpu().item()
-            #R2
-            #
-            # print(outputs)
-            # print(labels)
-            # print(loss)
-            # Backward and optimize
-            optimizer.zero_grad()
+          
             loss.backward()
             optimizer.step()
         model.eval()  # eval mode (batchnorm uses moving mean/variance instead of mini-batch mean/variance)
@@ -242,7 +235,7 @@ def main():
                 labels2 = labels2.to(device)
                 labels2 = torch.Tensor(labels2).unsqueeze(1)
 
-                outputs = torch.cat((outputs, labels2.to(device)), dim=0)
+                outputs = torch.cat((outputs, labels2.to(device)), dim=1)
 
 
                 valloss = criterion(outputs, labels)
@@ -270,29 +263,5 @@ def main():
     #torch.save(model.state_dict(), 'model2.ckpt')
 
 
-    #test
-    # TESTLOSS = 0
-    #
-    # model.load_state_dict(torch.load('model.pth'))
-    # model.eval()
-    # with torch.no_grad():
-    #     for images, labels in test_dataloader:
-    #         images = images.to(device)
-    #
-    #         labels = labels.to(torch.float32)
-    #         labels = labels.to(device)
-    #
-    #         outputs = model(images)
-    #         #outputs = outputs.squeeze()
-    #         #outputs = torch.round(outputs)
-    #         testloss = criterion(outputs, labels.view([-1, 1]))
-    #         #testloss += loss.item()
-    #         #with open(r"C:\Users\J\Desktop\1.pt",'ab') as f:
-    #             #torch.save(outputs,f)
-    #         #with open(r"C:\Users\J\Desktop\2.pt",'ab') as f:
-    #             #torch.save(labels, f)
-    #         print(outputs)
-    #         print(labels)
-    #     #Testloss=testloss/len(test_dataloader)
 if __name__ == '__main__':
     main()
