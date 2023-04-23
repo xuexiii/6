@@ -154,9 +154,9 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 # Hyper parameters 超参数
-num_epochs = 200
+num_epochs = 2000
 # batch_size: int = 4
-learning_rate = 0.001
+learning_rate = 0.0001
 
 
 
@@ -188,21 +188,21 @@ def main():
             self.fc = nn.Linear(num_conv_features + 1, 1)  # 将输入维度改为 num_conv_features + 1
 
         def forward(self, x, labels2):
-            print("x.shape:", x.shape)
-            print("labels2.shape:", labels2.shape)
+            # print("x.shape:", x.shape)
+            # print("labels2.shape:", labels2.shape)
             x = self.resnet(x)
             x = x.view(x.size(0), -1)
 
-            print("resnet output shape:", x.shape)
+            # print("resnet output shape:", x.shape)
             x = torch.cat([x, labels2], dim=1)
-            print("concatenated output shape:", x.shape)
+            # print("concatenated output shape:", x.shape)
 
             x = self.fc(x).squeeze(1)
-            print("final output shape:", x.shape)
+            # print("final output shape:", x.shape)
             return x
     # 实例化模型
     model = ResNetRegression(num_classes=1)
-    print(model)
+    # print(model)
 
     # Loss and optimizer
     criterion = nn.MSELoss()
@@ -213,14 +213,14 @@ def main():
 
     #train the model
     total_step = len(train_dataloader)
-    min_loss = 1000
+    min_loss = 10000000
     for epoch in range(num_epochs):
         LOSS = 0
         VALLOSS = 0
         rmse_sum=0
         n=0
         rmse_sum1 = 0
-        n1 = 0
+
         model.train()
         for i, (images, labels, labels2) in enumerate(tqdm(train_dataloader)):
             optimizer.zero_grad()
@@ -264,7 +264,7 @@ def main():
         print(len(train_dataloader))
         print(n)
         with torch.no_grad():
-            for (images, labels ,labels2) in val_dataloader:
+            for (images, labels, labels2) in val_dataloader:
                 images = images.to(device)
 
                 labels = labels.to(torch.float32)
@@ -272,21 +272,18 @@ def main():
                 labels2 = labels2.to(device)
                 labels2 = torch.Tensor(labels2).unsqueeze(1)
 
-                outputs = torch.cat((outputs, labels2.to(device)), dim=1)
-
+                outputs = model(images, labels2)
 
                 valloss = criterion(outputs, labels)
                 VALLOSS += valloss.item()
-                rmse_sum1 += torch.sqrt(((model(images.to(device)) - labels) ** 2).sum()).cpu().item()
             Valloss = VALLOSS / len(val_dataloader)
-            val_rmse = rmse_sum1 / sqrt((len(train_dataloader)*4-2))
             if Valloss < min_loss:
                 min_loss = Valloss
                 print("save model")
                 # 保存模型语句
                 torch.save(model.state_dict(), "model.pth")
-        print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f},train_rmse: {:.4f},valLoss: {:.4f},valrmse: {:.4f}'
-              .format(epoch + 1, num_epochs, i + 1, total_step, train_loss, train_rmse, Valloss, val_rmse))
+        print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f},train_rmse: {:.4f},valLoss: {:.4f}'
+              .format(epoch + 1, num_epochs, i + 1, total_step, train_loss, train_rmse, Valloss, ))
         Loss0 = np.array(train_loss)
         np.save(r'C:\Users\J\Desktop\loss\train/epoch_{}'.format(epoch), Loss0)
         Loss1 = np.array(Valloss)
